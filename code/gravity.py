@@ -7,6 +7,8 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.layers.experimental import preprocessing
 import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
 # Model / data parameters
 
 N_samples = 1000
@@ -14,60 +16,67 @@ max_height = 10
 max_weight = 1
 g = 9.82
 
-def get_test_train_data():
-    h = np.random.uniform(1, max_height, N_samples)
+def run(n_samples, plot = False):
+    h = np.random.uniform(1, max_height, n_samples)
     # h_noise = h + add_noise
-    # m = np.random.rand(N_samples)*max_weight
+    # m = np.random.rand(n_samples)*max_weight
     # 1/2 mv2 = mgh
     # v = np.sqrt(2*g*h)
-    t_noise = np.random.normal(0, 0.1, N_samples)
+    t_noise = np.random.normal(0, 0.1, n_samples)
     t = fun(h,g)+t_noise
     # plt.show()
 
     a, a_cov = fit_mechanistic(h, t)
-    h_test = np.arange(1,max_height, 0.1)
+    model = fit_neural(h, t)
 
+
+    h_test = np.arange(1,max_height, 0.1)
     t_true = fun(h_test, g)
     
     f = fun(h_test, a)
-    model = fit_neural(h, t)
-    f_nn = model.predict(h_test)
+    f_nn = model.predict(h_test).flatten()
+
 
     rmse = np.sqrt(((f-t_true)**2).sum()/len(h_test))
     rmse_nn = np.sqrt(((f_nn-t_true)**2).sum()/len(h_test))
 
-    plt.scatter(h, t, s = 2, facecolors='none', edgecolors='b')
-    plt.plot(h_test, f, lw = 2, c = "r", label = "Mechanistic model, rmse: {0:.2e}".format(rmse))
-    plt.plot(h_test, f_nn, lw = 2, c = "g", label = "Deep learning, rmse: {0:.2e}".format(rmse_nn))
-    plt.legend()
-    plt.ylabel("Time [s]")
-    plt.xlabel("Drop height [m]")
-    plt.figtext(0.05, 0.05, "Estimated g: {0:.3f}".format(a))
-    plt.show()
+    if plot:
 
-    print(rmse)
-    print(rmse_nn)
+        plt.scatter(h, t, s = 2, facecolors='none', edgecolors='b')
+        plt.plot(h_test, f, lw = 2, c = "r", label = "Mechanistic model, rmse: {0:.2e}".format(rmse))
+        plt.plot(h_test, f_nn, lw = 2, c = "g", label = "Deep learning, rmse: {0:.2e}".format(rmse_nn))
+        plt.legend()
+        plt.ylabel("Time [s]")
+        plt.xlabel("Drop height [m]")
+        plt.figtext(0.05, 0.05, "Estimated g: {0:.3f}".format(a))
+        plt.show()
+
+        print(rmse)
+        print(rmse_nn)
+    return rmse, rmse_nn
 
 def fun(h, a):
     return np.sqrt(2*h/a)
 
 def fit_mechanistic(h, t_train):
-    M = np.vstack([np.sqrt(h), np.zeros(len(h))]).T
+    M = np.vstack([h, np.zeros(len(h))]).T
+    # M = np.vstack([np.sqrt(h), np.zeros(len(h))]).T
     # M = np.vstack([np.sqrt(h), np.ones(len(h))]).T
-    m, cov = np.linalg.lstsq(M, t_train)[:2]
+    m, cov = np.linalg.lstsq(M, t_train**2)[:2]
     print(m)
-    a = 2/m**2
+    # a = 2/m[0]**2
+    a = 2/m[0]
     print(a)
-    return a[0], cov
+    return a, cov
 
 def fit_neural(h, t_train):
     normalizer = preprocessing.Normalization(input_shape = [1,])
     model = keras.Sequential([
         normalizer,
-        layers.Dense(units=16, activation = "sigmoid"),
-        layers.Dense(units=16, activation = "sigmoid"),
-        layers.Dense(units=16, activation = "sigmoid"),
-        layers.Dense(units=16, activation = "sigmoid"),
+        layers.Dense(units=16, activation = "relu"),
+        layers.Dense(units=16, activation = "relu"),
+        layers.Dense(units=16, activation = "relu"),
+        layers.Dense(units=16, activation = "relu"),
         layers.Dense(units=1)])
     model.summary()
     model.compile(
@@ -93,59 +102,48 @@ def plot_loss(history):
 
 
 
-# def get_test_train_data():
-#     # the data, split between train and test sets
-#     (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
-
-#     # Scale images to the [0, 1] range
-#     x_train = x_train.astype("float32") / 255
-#     x_test = x_test.astype("float32") / 255
-#     # Make sure images have shape (28, 28, 1)
-#     x_train = np.expand_dims(x_train, -1)
-#     x_test = np.expand_dims(x_test, -1)
-#     print("x_train shape:", x_train.shape)
-#     print(x_train.shape[0], "train samples")
-#     print(x_test.shape[0], "test samples")
 
 
-#     # convert class vectors to binary class matrices
-#     y_train = keras.utils.to_categorical(y_train, num_classes)
-#     y_test = keras.utils.to_categorical(y_test, num_classes)
-#     return x_train, y_train, x_test, y_test
 
-def create_model():
 
-    model = keras.Sequential(
-        [
-            keras.Input(shape=input_shape),
-            layers.Conv2D(32, kernel_size=(3, 3), activation="relu"),
-            layers.MaxPooling2D(pool_size=(2, 2)),
-            layers.Conv2D(64, kernel_size=(3, 3), activation="relu"),
-            layers.MaxPooling2D(pool_size=(2, 2)),
-            layers.Flatten(),
-            layers.Dropout(0.5),
-            layers.Dense(num_classes, activation="softmax"),
-        ]
-    )
+def run_many():
+    train_size = list(np.arange(2, 10, 1)) + list(np.arange(10, 100, 10)) + list(np.arange(100, 5000, 100))
+    rmse_nn_arr = np.zeros((len(train_size), 5))
+    rmse_arr = np.zeros((len(train_size), 5))
+    for j in range(5):
+        for i, n in enumerate(train_size):
+            rmse_arr[i, j], rmse_nn_arr[i, j] = run(n, False) 
+    np.savetxt("rmse_nn.csv", rmse_nn_arr)
+    np.savetxt("rmse.csv", rmse_arr)
+    np.savetxt("train_size.csv", train_size)
 
-    model.summary()
-    batch_size = 128
-    epochs = 15
+def plot_many():
+    rmse_nn = np.loadtxt("rmse_nn.csv")
+    rmse = np.loadtxt("rmse.csv")
+    train_size = np.loadtxt("train_size.csv")
 
-    model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
-    return model
 
-def run():
-    x_train, y_test, x_test, y_test = get_test_train_data()
-    model = create_model()
+    df_rmse = pd.DataFrame(rmse)
+    df_rmse_nn = pd.DataFrame(rmse_nn)
+    df_rmse["Training set size"] = train_size
+    df_rmse["Method"] = "Mechanistic model"
+    
+    df_rmse_nn["Training set size"] = train_size
+    df_rmse_nn["Method"] = "Deep learning"
 
-    model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, validation_split=0.1)
+    df = pd.concat([df_rmse, df_rmse_nn])
+    df_long = pd.melt(df, id_vars=['Method', "Training set size"], value_vars=[0,1,2,3,4], var_name = "Parallell", value_name = "RMSE")
+    print(df_long.columns)
+    fig, ax = plt.subplots(1)
+    sns.lineplot(data = df_long, x = "Training set size", y = "RMSE", hue = "Method")
+    ax.set_xscale("log")
+    plt.show()
 
-    score = model.evaluate(x_test, y_test, verbose=0)
-    print("Test loss:", score[0])
-    print("Test accuracy:", score[1])
+
 
 
 if __name__ == '__main__':
-    # run()
-    get_test_train_data()
+    # rmse, rmse_nn
+    # run(N_samples, True)
+    # run_many()
+    plot_many()
