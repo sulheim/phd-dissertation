@@ -1,0 +1,5 @@
+name: phd-thesis
+channels:
+  - conda-forge
+dependencies:
+  - cobra
